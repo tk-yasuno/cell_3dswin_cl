@@ -1,0 +1,42 @@
+# Cell 3D Voxel x Text Contrastive Learning (MVP v0.3.0)
+# Python 3.12, CUDA 12.4 (RTX 4060 Ti 16GB)
+#
+# IMPORTANT install order: `pip install -r requirements.txt` alone will pull a
+# CPU-only `torch` from PyPI. Always (re)install the matching CUDA build of
+# torch+torchvision LAST, from the dedicated index:
+#   pip install -r requirements.txt
+#   pip install torch==2.6.0 torchvision==0.21.0 --index-url https://download.pytorch.org/whl/cu124
+# Verify with: python -c "import torch; print(torch.__version__, torch.cuda.is_available())"
+
+# Deep Learning
+torchvision==0.21.0
+transformers>=4.57.0      # Bio_ClinicalBERT (AutoModel/AutoTokenizer)
+accelerate>=0.34.0
+peft>=0.18.0               # LoRA adapters for the voxel (3D Swin) and text (BERT) towers
+monai>=1.3.0                # 3D Swin Transformer (SwinUNETR encoder, swinViT)
+einops>=0.7.0                # required by monai's SwinTransformer (rearrange ops)
+
+# 3D microscopy I/O
+aicsimageio>=4.14.0         # OME-TIFF reader for Allen Cell crop_raw/crop_seg volumes (pulls a
+                             # compatible tifffile transitively; do not pin tifffile separately,
+                             # it conflicts with aicsimageio's own upper bound)
+quilt3>=5.3.0               # Allen Institute hiPSC single-cell dataset access (s3://allencell)
+scipy>=1.11.0               # scipy.ndimage.zoom voxel resize
+
+# Data Processing
+numpy>=1.24.0
+pandas>=2.0.0
+pyyaml>=6.0
+pyarrow>=14.0.0
+
+# Machine Learning / Evaluation
+scikit-learn>=1.3.0
+
+# Visualization
+matplotlib>=3.7.0
+seaborn>=0.12.0
+
+# Utilities
+tqdm>=4.65.0
+python-dotenv>=1.0.0
+loguru>=0.7.0

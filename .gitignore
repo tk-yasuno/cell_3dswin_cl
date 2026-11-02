@@ -1,0 +1,16 @@
+# Virtual environment
+.venv-cell3dswin/
+
+# Backups / prior-version code and papers kept locally only
+0_LogBAK/
+
+# Dataset cache and generated CSVs/voxel arrays (large, reproducible via
+# prepare_voxel_cell_dataset.py)
+data/
+
+# Paper build artifacts (LaTeX outputs, figures)
+paper_cell_3dswin_cl/
+
+# Python
+__pycache__/
+*.pyc

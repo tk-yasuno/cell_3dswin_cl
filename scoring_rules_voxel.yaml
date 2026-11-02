@@ -1,0 +1,50 @@
+# Phase 5, Step 13 (v0.3.0): 3D voxel cell anomaly scoring rules
+# (contrastive-similarity based).
+#
+# Analogous to scoring_rules_cell.yaml (v0.2.0, 2D cell microscopy), this
+# scores 3D voxel volumes directly from the VoxelSwinCLAIP embedding space: a
+# compositional prompt ensemble ("a 3D confocal fluorescence volume of a
+# {state} {subject}") builds "normal" (interphase) and "abnormal" (mitotic)
+# text prototypes, and the cosine-similarity gap between a voxel embedding
+# and these two prototypes determines the 1-5 anomaly level. {subject} is
+# filled with the structure's display name (config.yaml
+# v03_dataset.structure_display_names, e.g. "mitochondria (TOM20)") by
+# scoring_cell_anomaly_voxel.py.
+#
+# See docs/Plan_cell_3dswin_cl_v0-3-0.md, Phase 5 Step 13 / Decisions.
+
+state_prompts:
+  normal:
+    - "a 3D confocal fluorescence volume of a healthy, interphase {subject}"
+    - "a 3D microscopy volume showing a normal, non-dividing {subject}"
+    - "volumetric confocal microscopy of an intact, non-mitotic {subject}"
+  abnormal:
+    - "a 3D confocal fluorescence volume of a dividing, mitotic {subject}"
+    - "a 3D microscopy volume showing {subject} undergoing mitotic reorganization"
+    - "volumetric confocal microscopy of a {subject} in cell division"
+
+# cell_anomaly_voxel_score = similarity(voxel, normal_prototype) -
+# similarity(voxel, abnormal_prototype), mapped to a 5-level scale (higher =
+# more normal/interphase-like, lower = more anomalous/mitotic-like),
+# mirroring v0.1.0/v0.2.0's score_bins bin-edge convention.
+score_bins:
+  - level: 1   # most abnormal (mitotic-like)
+    label: "Critical"
+    max_score: -0.10
+  - level: 2
+    label: "Poor"
+    max_score: -0.02
+  - level: 3
+    label: "Fair"
+    max_score: 0.02
+  - level: 4
+    label: "Good"
+    max_score: 0.10
+  - level: 5   # most normal (interphase-like)
+    label: "Excellent"
+    max_score: 1.0
+
+proxy_validation:
+  labels_file: "cell_anomaly_proxy_labels_voxel.yaml"
+  metric: "roc_auc"
+  prototype_threshold: 0.70   # provisional MVP sanity bar, not a production criterion

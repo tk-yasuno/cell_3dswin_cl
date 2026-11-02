@@ -1,0 +1,185 @@
+# Cell 3D Voxel x Text Contrastive Learning (MVP v0.3.0) Configuration
+# Domain adaptation experiment: 3D Swin Transformer (voxel) + Bio_ClinicalBERT
+# (text) dual encoder, trained with InfoNCE on Allen Institute hiPSC
+# single-cell 3D fluorescence microscopy volumes + template-generated
+# structural finding text, as a biological proxy for future 3D pavement
+# material microscopy anomaly diagnosis. See docs/Plan_cell_3dswin_cl_v0-3-0.md.
+
+# ============================================================================
+# v0.3: Dataset Preparation (Allen Institute hiPSC single-cell 3D volumes)
+# ============================================================================
+v03_dataset:
+  quilt3_package: "aics/hipsc_single_cell_image_dataset"
+  registry: "s3://allencell"
+  # NOTE: this dataset is distributed under Allen Institute's non-commercial
+  # research/education Terms of Use (CC BY-NC-SA-like, attribution required).
+  # See cell_anomaly_proxy_labels_voxel.yaml header for the full caveat, the
+  # same pattern used for C-NMC/LDC in v0.2.0.
+  license_note: "Allen Institute Terms of Use: non-commercial research/education only, attribution required (https://www.allencell.org/terms-of-use.html)"
+
+  # 4 structures spanning distinct organelle/structure categories (nuclear
+  # envelope, mitochondria, microtubules, tight junctions), each a validated
+  # structure_name actually present in this quilt3 package's metadata.csv
+  # (verified empirically; NOTE: the Concept Note's candidate "CAAX" plasma
+  # membrane line is NOT present in aics/hipsc_single_cell_image_dataset --
+  # TJP1 (tight junction protein ZO-1, a membrane-associated structure) was
+  # substituted as the closest available analog. "TOMM20" is the correct
+  # HGNC gene symbol for the mitochondrial structure, not "TOM20". See
+  # docs/Plan_cell_3dswin_cl_v0-3-0.md, Decisions (updated during Phase 1
+  # implementation).
+  structures: ["LMNB1", "TOMM20", "TUBA1B", "TJP1"]
+  structure_display_names:
+    LMNB1: "nuclear envelope (lamin B1)"
+    TOMM20: "mitochondria (TOM20)"
+    TUBA1B: "microtubules (alpha-tubulin)"
+    TJP1: "tight junctions (ZO-1)"
+
+  per_class_target: 750    # per structure_name; 4 x 750 = 3,000 cells total
+  test_per_class: 125      # 4 x 125 = 500 fixed holdout; pool = 4 x 625 = 2,500
+
+  # Mitosis is naturally rare (verified empirically: ~2-13% of cells per
+  # structure in this dataset), so mitotic (abnormal-like) cells are
+  # deliberately oversampled up to this fraction of each structure's
+  # per_class_target, topped up with interphase cells for the remainder.
+  # This keeps Phase 5's anomaly-scoring ROC-AUC proxy validation from
+  # having too few positive (abnormal-like) samples.
+  mitotic_oversample_fraction: 0.2
+
+  # Voxel preprocessing (Phase 1, Step 4)
+  voxel_shape: [64, 64, 64]          # must be divisible by 32 (monai SwinUNETR patch_size**5 constraint)
+  channels: ["dna", "structure"]      # crop_raw's fixed 3-channel order is [dna, membrane, structure];
+                                       # membrane (index 1) is skipped, see prepare_voxel_cell_dataset.py
+  intensity_clip_percentile: [0.5, 99.5]
+  random_seed: 42
+  stratify_by: "structure_name"
+
+  output_dir: "data/v03_fine_tuning"
+  voxel_cache_dir: "data/v03_fine_tuning/voxels"   # {structure_name}/{CellId}.npy, float16 [2,64,64,64]
+
+  # Progressive training scales -- reduced from v0.1.0/v0.2.0's 4 stages
+  # (1k/2k/3k/4k) to 3 stages, since 3D voxel + 3D Swin per-sample compute is
+  # substantially heavier than 2D CLIP (see Plan, Decisions).
+  train_sizes: [800, 1600, 2500]
+  scale_labels: {800: "0.8k", 1600: "1.6k", 2500: "2.5k"}
+
+  # cell_stage proxy labels (M0 = interphase = normal-like; M1M2/M3/M4M5/
+  # M6M7_single/M6M7_complete = combined mitotic sub-stage buckets =
+  # abnormal-like). NOT formal ground truth w.r.t. the ultimate
+  # pavement-material production task -- see proxy_labels_file.
+  proxy_labels_file: "cell_anomaly_proxy_labels_voxel.yaml"
+
+  # Template caption ensembles (Phase 1, Step 5), keyed by cell_stage bucket.
+  # Rendered with {structure} = structure_display_names[row.structure_name]
+  # and, for mitotic, {stage} = the raw cell_stage value (e.g. "M4").
+  finding_templates:
+    interphase:
+      - "a 3D confocal fluorescence volume of an interphase human iPS cell showing an intact {structure}"
+      - "a 3D microscopy volume showing normal, non-dividing {structure} morphology"
+      - "a 3D fluorescence image of a healthy interphase cell with typical {structure} organization"
+      - "volumetric confocal microscopy of {structure} in a non-mitotic, interphase hiPS cell"
+    mitotic:
+      - "a 3D confocal fluorescence volume of a mitotic human iPS cell showing {structure} reorganization during cell division (stage {stage})"
+      - "a 3D microscopy volume showing {structure} undergoing mitotic remodeling (stage {stage})"
+      - "a 3D fluorescence image of a dividing cell with {structure} reorganized for mitosis (stage {stage})"
+      - "volumetric confocal microscopy of {structure} in a mitotic hiPS cell, stage {stage}"
+
+# ============================================================================
+# v0.3: Contrastive Learning Domain Adaptation (3D Swin + ClinicalBERT + LoRA)
+# ============================================================================
+v03_contrastive_training:
+  model:
+    voxel_img_size: [64, 64, 64]
+    in_channels: 2
+    feature_size: 24          # must be divisible by 12 (monai SwinUNETR constraint); 48 default halved for 16GB VRAM
+    use_checkpoint: true       # gradient checkpointing, required to fit 16GB VRAM
+    bert_model_id: "emilyalsentzer/Bio_ClinicalBERT"
+    shared_dim: 512
+
+  lora:
+    voxel:
+      r: 8
+      alpha: 16
+      dropout: 0.05
+      target_regex: '.*\.attn\.(qkv|proj)$'
+    text:
+      r: 16
+      alpha: 32
+      dropout: 0.05
+      target_modules: ["query", "key", "value"]
+
+  quantization:
+    enabled: false
+
+  # Training hyperparameters. batch_size confirmed empirically via Phase 0's
+  # smoke test (tests/smoke_test_voxel_swin_claip.py): batch=4 -> 3.26GB,
+  # batch=16 -> 11.39GB, batch=12 -> 8.68GB peak CUDA memory (RTX 4060 Ti
+  # 16GB). batch_size=12 chosen for a comfortable safety margin (~54% of
+  # budget) while maximizing in-batch negatives for InfoNCE.
+  training:
+    batch_size: 12
+    learning_rate: 1.0e-4
+    num_epochs: 15
+    warmup_steps: 20
+    max_grad_norm: 1.0
+    weight_decay: 0.01
+    optim: "adamw_torch"
+    lr_scheduler_type: "cosine"
+    bf16: true
+    logging_steps: 10
+    eval_steps: 50
+    save_total_limit: 1
+    loss: "clip_infonce"
+
+  data:
+    train_val_split: 0.85
+
+  output:
+    base_dir: "models"
+    run_prefix: "voxel_swin_claip"   # -> models/voxel_swin_claip_{0.8k,1.6k,2.5k}/
+
+# ============================================================================
+# v0.3: Evaluation (zero-shot classification, retrieval, anomaly scoring,
+# diagnosis-reason retrieval)
+# ============================================================================
+v03_evaluation:
+  output_dir: "data/v03_fine_tuning/evaluations"
+
+  zero_shot:
+    prompt_template: "a 3D confocal fluorescence volume showing {c}"
+    batch_size: 8
+    # No external literature baseline exists for this architecture/domain
+    # (random-initialized 3D Swin voxel encoder has no CLIP-style pretrained
+    # prior); self-baseline (base vs. domain-adapted) only, same caveat as
+    # v0.2.0.
+    base_accuracy_sanity_range: null
+    chance_accuracy: 0.25   # 1 / 4 structures
+
+  retrieval:
+    batch_size: 16
+    recall_at_k: [1, 5, 10]
+
+  scoring:
+    rules_file: "scoring_rules_voxel.yaml"
+    output_prefix: "cell_anomaly_voxel"
+    proxy_validation:
+      positive_label_key: "abnormal_like_stages"   # cell_anomaly_proxy_labels_voxel.yaml key
+      positive_column_name: "proxy_is_abnormal_like"
+      prototype_threshold: 0.70   # same provisional MVP sanity bar as v0.1.0
+
+  diagnosis_retrieval:
+    top_ks: [1, 5]
+
+# ============================================================================
+# v0.3: Paper output
+# ============================================================================
+v03_paper:
+  latex_dir: "paper_cell_3dswin_cl/0_cell_3dswin_cl_v0-3-0"
+  figures_dir: "paper_cell_3dswin_cl/0_cell_3dswin_cl_v0-3-0/figures"
+  sections:
+    - "methodology"
+    - "results"
+    - "discussion"
+  figures:
+    dpi: 300
+    format: "png"
+    style: "seaborn-v0_8-paper"

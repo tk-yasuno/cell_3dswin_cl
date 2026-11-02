@@ -1,0 +1,36 @@
+# Weak-label proxy mapping for the v0.3.0 Allen Institute hiPSC voxel
+# cell_stage metadata.
+#
+# IMPORTANT: Allen Institute's cell_stage annotation (M0 = interphase;
+# M1M2/M3/M4M5/M6M7_single/M6M7_complete = successive combined mitotic
+# sub-stage buckets -- verified empirically against the actual
+# aics/hipsc_single_cell_image_dataset metadata.csv, which groups raw M1-M7
+# into these 5 buckets rather than exposing M1..M7 individually) IS a
+# formal, instrument-derived ground truth for "is this cell currently
+# dividing". However, with respect to the ultimate production task (3D
+# anomaly diagnosis in road-pavement material microscope volumes), mitosis
+# is NOT literally the same concept as material damage -- this hiPSC 3D
+# dataset stands in for the production domain exactly as DTD stood in for
+# pavement textures in v0.1.0 and the Malaria/C-NMC/LDC 2D cell images stood
+# in for 2D cell anomaly in v0.2.0. These two buckets are therefore used
+# ONLY to sanity-check the 3D voxel anomaly scoring prototype (Phase 5, Step
+# 13), NOT as a formal acceptance criterion, and are NOT reused as-is once
+# real road-pavement 3D microscope data is available.
+# See docs/Plan_cell_3dswin_cl_v0-3-0.md -> Decisions.
+#
+# abnormal_like_stages: cell_stage values representing a mitotic
+#   (dividing/reorganizing) cell state -- the 3D-voxel analog of v0.2.0's
+#   abnormal_like classes.
+# normal_like_stages: cell_stage values representing an interphase
+#   (non-dividing) cell state -- the 3D-voxel analog of v0.2.0's
+#   normal_like classes.
+
+abnormal_like_stages:
+  - M1M2              # prophase/prometaphase
+  - M3                 # metaphase
+  - M4M5               # anaphase/telophase
+  - M6M7_single        # cytokinesis, single daughter cell segmented
+  - M6M7_complete      # cytokinesis, both daughter cells segmented
+
+normal_like_stages:
+  - M0   # interphase (non-mitotic)

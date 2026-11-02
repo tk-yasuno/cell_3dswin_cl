@@ -1,0 +1,24 @@
+{
+  "voxel_img_size": [
+    64,
+    64,
+    64
+  ],
+  "in_channels": 2,
+  "feature_size": 24,
+  "use_checkpoint": true,
+  "lora_r_voxel": 8,
+  "lora_alpha_voxel": 16,
+  "lora_dropout_voxel": 0.05,
+  "voxel_target_regex": ".*\\.attn\\.(qkv|proj)$",
+  "bert_model_id": "emilyalsentzer/Bio_ClinicalBERT",
+  "lora_r_text": 16,
+  "lora_alpha_text": 32,
+  "lora_dropout_text": 0.05,
+  "text_target_modules": [
+    "query",
+    "key",
+    "value"
+  ],
+  "shared_dim": 512
+}
