@@ -59,7 +59,7 @@ def stratified_subset(pool: pd.DataFrame, n: int, seed: int, stratify_col: str) 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", default="config.yaml")
-    parser.add_argument("--version", default="v03", choices=["v03"],
+    parser.add_argument("--version", default="v03", choices=["v03", "v031"],
                          help="which config section prefix to use, e.g. 'v03_dataset'")
     args = parser.parse_args()
 

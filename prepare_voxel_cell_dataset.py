@@ -69,16 +69,28 @@ CROP_RAW_STRUCTURE_CHANNEL = 2
 def get_package_and_metadata(cfg: dict):
     pkg = quilt3.Package.browse(cfg["quilt3_package"], registry=cfg["registry"])
 
-    cache_path = Path(cfg["output_dir"]) / "_cache" / "allen_metadata_raw.csv"
-    if cache_path.exists():
-        print(f"[prepare_voxel_cell_dataset] loading cached metadata from {cache_path}")
-        meta_df = pd.read_csv(cache_path, usecols=METADATA_COLUMNS)
+    # Shared across config versions (v03, v031, ...) since it's the same
+    # underlying quilt3 package/metadata regardless of which structures a
+    # given version samples from -- avoids repeating the ~10 minute S3
+    # metadata.csv download for every new version.
+    shared_cache_path = Path("data/_shared_cache/allen_metadata_raw.csv")
+    legacy_v03_cache_path = Path("data/v03_fine_tuning/_cache/allen_metadata_raw.csv")
+
+    if shared_cache_path.exists():
+        print(f"[prepare_voxel_cell_dataset] loading cached metadata from {shared_cache_path}")
+        meta_df = pd.read_csv(shared_cache_path, usecols=METADATA_COLUMNS)
+    elif legacy_v03_cache_path.exists():
+        print(f"[prepare_voxel_cell_dataset] reusing existing v0.3.0 metadata cache "
+              f"from {legacy_v03_cache_path}")
+        shared_cache_path.parent.mkdir(parents=True, exist_ok=True)
+        shared_cache_path.write_bytes(legacy_v03_cache_path.read_bytes())
+        meta_df = pd.read_csv(shared_cache_path, usecols=METADATA_COLUMNS)
     else:
         print("[prepare_voxel_cell_dataset] fetching metadata.csv from S3 "
               "(first run; this can take ~10 minutes) ...")
         full_df = pkg["metadata.csv"]()
-        cache_path.parent.mkdir(parents=True, exist_ok=True)
-        full_df.to_csv(cache_path, index=False)
+        shared_cache_path.parent.mkdir(parents=True, exist_ok=True)
+        full_df.to_csv(shared_cache_path, index=False)
         meta_df = full_df[METADATA_COLUMNS]
     return pkg, meta_df
 
@@ -265,17 +277,19 @@ def assemble_dataframe(all_rows: list[dict], cfg: dict, rng: random.Random) -> p
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", default="config.yaml")
+    parser.add_argument("--version", default="v03", choices=["v03", "v031"],
+                         help="which config section prefix to use, e.g. 'v03_dataset' or 'v031_dataset'")
     parser.add_argument("--per-class-target", type=int, default=None,
-                         help="override v03_dataset.per_class_target (for quick smoke runs)")
+                         help="override {version}_dataset.per_class_target (for quick smoke runs)")
     parser.add_argument("--test-per-class", type=int, default=None,
-                         help="override v03_dataset.test_per_class (for quick smoke runs)")
+                         help="override {version}_dataset.test_per_class (for quick smoke runs)")
     parser.add_argument("--structures", nargs="+", default=None,
-                         help="override v03_dataset.structures (for quick smoke runs)")
+                         help="override {version}_dataset.structures (for quick smoke runs)")
     parser.add_argument("--max-workers", type=int, default=8,
                          help="concurrent S3 download threads (I/O bound, safe to raise)")
     args = parser.parse_args()
 
-    cfg = load_config(args.config)["v03_dataset"]
+    cfg = load_config(args.config)[f"{args.version}_dataset"]
     if args.per_class_target is not None:
         cfg["per_class_target"] = args.per_class_target
     if args.test_per_class is not None:

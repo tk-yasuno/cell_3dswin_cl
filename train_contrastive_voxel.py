@@ -31,8 +31,6 @@ from tqdm import tqdm
 
 from src.models.voxel_swin_claip import VoxelSwinCLAIP, VoxelSwinCLAIPConfig
 
-SCALE_FILES = {"0.8k": "train_0.8k.csv", "1.6k": "train_1.6k.csv", "2.5k": "train_2.5k.csv"}
-
 
 def load_config(path: str) -> dict:
     with open(path, "r", encoding="utf-8") as f:
@@ -75,9 +73,9 @@ def clip_infonce_loss(logits_per_voxel: torch.Tensor, logits_per_text: torch.Ten
     return (loss_v2t + loss_t2v) / 2.0
 
 
-def train_one_scale(cfg: dict, scale: str) -> dict:
-    ds_cfg = cfg["v03_dataset"]
-    train_cfg = cfg["v03_contrastive_training"]
+def train_one_scale(cfg: dict, scale: str, version: str = "v03") -> dict:
+    ds_cfg = cfg[f"{version}_dataset"]
+    train_cfg = cfg[f"{version}_contrastive_training"]
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model_cfg = VoxelSwinCLAIPConfig(
@@ -99,7 +97,7 @@ def train_one_scale(cfg: dict, scale: str) -> dict:
     model = VoxelSwinCLAIP(model_cfg).to(device)
     model.train()
 
-    csv_path = Path(ds_cfg["output_dir"]) / SCALE_FILES[scale]
+    csv_path = Path(ds_cfg["output_dir"]) / f"train_{scale}.csv"
     full_df = pd.read_csv(csv_path)
     split_ratio = train_cfg["data"]["train_val_split"]
     n_train = int(len(full_df) * split_ratio)
@@ -194,13 +192,18 @@ def train_one_scale(cfg: dict, scale: str) -> dict:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", default="config.yaml")
-    parser.add_argument("--scale", default="all", choices=["0.8k", "1.6k", "2.5k", "all"])
+    parser.add_argument("--version", default="v03", choices=["v03", "v031"],
+                         help="which config section prefix to use, e.g. 'v03_dataset'")
+    parser.add_argument("--scale", default="all",
+                         help="a scale label from {version}_dataset.scale_labels, or 'all'")
     args = parser.parse_args()
 
     cfg = load_config(args.config)
-    scales = ["0.8k", "1.6k", "2.5k"] if args.scale == "all" else [args.scale]
+    ds_cfg = cfg[f"{args.version}_dataset"]
+    all_scales = list(ds_cfg["scale_labels"].values())
+    scales = all_scales if args.scale == "all" else [args.scale]
     for scale in scales:
-        train_one_scale(cfg, scale)
+        train_one_scale(cfg, scale, version=args.version)
 
 
 if __name__ == "__main__":

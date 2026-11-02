@@ -98,13 +98,14 @@ def zero_shot_eval(model: VoxelSwinCLAIP, test_csv: str, prompt_template: str,
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", default="config.yaml")
+    parser.add_argument("--version", default="v03", choices=["v03", "v031"])
     parser.add_argument("--model", default="base", help="'base' or a models/ dir name, e.g. voxel_swin_claip_1.6k")
     args = parser.parse_args()
 
     cfg = load_config(args.config)
-    ds_cfg = cfg["v03_dataset"]
-    train_cfg = cfg["v03_contrastive_training"]
-    eval_cfg = cfg["v03_evaluation"]["zero_shot"]
+    ds_cfg = cfg[f"{args.version}_dataset"]
+    train_cfg = cfg[f"{args.version}_contrastive_training"]
+    eval_cfg = cfg[f"{args.version}_evaluation"]["zero_shot"]
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = load_model(args.model, train_cfg, device)
@@ -120,7 +121,7 @@ def main() -> None:
         print("[evaluate_zeroshot_voxel] no literature sanity range configured for this "
               "architecture/domain (base_accuracy_sanity_range=null); recording self-baseline only")
 
-    out_dir = Path(cfg["v03_evaluation"]["output_dir"])
+    out_dir = Path(cfg[f"{args.version}_evaluation"]["output_dir"])
     out_dir.mkdir(parents=True, exist_ok=True)
     out_path = out_dir / f"zero_shot_{args.model}.json"
     with open(out_path, "w", encoding="utf-8") as f:

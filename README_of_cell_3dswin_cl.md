@@ -1,4 +1,4 @@
-# Cell 3D Voxel x Text Contrastive Learning (MVP v0.3.0)
+# Cell 3D Voxel x Text Contrastive Learning (MVP v0.3.0 / v0.3.1)
 
 3D confocal fluorescence microscopy volumes (Allen Institute hiPSC single-cell image dataset) paired with template-generated structural finding text, contrastively trained with a 3D Swin Transformer voxel encoder + ClinicalBERT finding encoder (`VoxelSwinCLAIP`), as an experimental methodology for domain-adapting 3D cell morphology → text diagnosis toward future pavement-material 3D microscopy anomaly diagnosis. Builds on v0.1.0 (DTD, 2D CLIP+LoRA) and v0.2.0 (`cell_vlm_cl`, 2D cell microscopy, 2D CLIP+LoRA). Full design rationale: [docs/Plan_cell_3dswin_cl_v0-3-0.md](docs/Plan_cell_3dswin_cl_v0-3-0.md). Full write-up: [paper_cell_3dswin_cl/0_cell_3dswin_cl_v0-3-0/methodology.tex](paper_cell_3dswin_cl/0_cell_3dswin_cl_v0-3-0/methodology.tex).
 
@@ -77,9 +77,28 @@ v0.1.0/v0.2.0と異なり、どのスケールも暫定閾値0.70を超えなか
 - **メタデータの列は必ず実データで検証する**: `ChannelNumberStruct`/`ChannelNumber405`等はFOVレベルの値であり、既にクロップ済みの`crop_raw`（常に固定3チャンネル順: 0=DNA, 1=膜, 2=構造タンパク質）には適用できないことを実装時に発見。
 - **候補データソースも実データで検証する**: Concept Note候補の「CAAX」構造体はこのquilt3パッケージには存在せず、「TOM20」は正式には`TOMM20`。
 
+## v0.3.1（多様性・規模拡張）
+
+v0.3.0の4構造体×750件(計3,000セル)から、8構造体×1,000件(計8,000セル、核小体FBL・小胞体SEC61B・ゴルジ体ST6GAL1・アクチン線維ACTBを追加)に拡張し、anomaly(mitotic)件数を334/1,600まで確保した。アーキテクチャ・学習方式はv0.3.0のフルFine-tuning(Voxel)+LoRA(Text)を無変更で踏襲。計算資源・時間の制約により、progressive scaleは1.6k/3.2k/4.8kまでとし、6.4kは未実施。
+
+### 実験結果（voxel test split, n=1,600, 8構造体）
+
+| モデル | ゼロショット精度(chance=12.5%) | 異常スコアリングAUC | 診断理由検索hit-rate@1 |
+| ------ | ------------------------------ | -------------------- | ----------------------- |
+| base | 7.6% | 0.518 | 9.0% |
+| 1.6k | 12.5% | 0.491 | 12.3% |
+| 3.2k | 12.5% | 0.514 | 9.9% |
+| 4.8k | 12.5% | 0.604 | 11.4% |
+
+### 重要な発見（多様性・汎用性に関する知見）
+
+v0.3.0で確立した「Voxel EncoderをフルFine-tuningする」修正を**無変更で適用した同一アーキテクチャ**にも関わらず、構造体数を4→8、データ規模を3,000→8,000に拡大したところ、全学習スケールでゼロショット精度がちょうどchanceレベル(12.5%=200/1,600、単一クラスへの定数予測)に固定される崩壊が再発した。診断の結果、voxel embeddingが構造体間でほぼ無差別に崩壊している(pairwise cosine類似度0.92〜0.998)ことを確認。学習lossはv0.3.0より低い値(4.8k: val_loss=0.640)まで下がっており、text encoder側の埋め込みは構造体ごとに健全に分離していた(text-text類似度-0.46〜0.36)ことから、崩壊はVoxel Encoder側に限局している。
+
+**結論**: ある多様性・規模で確立した修正が、より大きな多様性・規模に無条件に汎化するとは限らない——学習lossの健全性だけでは、対照学習の修正が新しい規模・多様性レジームに汎化することを保証しない、という本追補の中心的な知見。原因の確定（per-epoch埋め込み多様性プローブ等）は計算資源・時間の制約によりv0.4.0以降の課題とする。詳細は論文Section「Extension: Structural Diversity and Dataset Scale (v0.3.1)」参照。
+
 ## 成果物
 
-- 学習済みモデル: `models/voxel_swin_claip_{0.8k,1.6k,2.5k}/`
-- 評価結果: [data/v03_fine_tuning/evaluations/](data/v03_fine_tuning/evaluations)
+- 学習済みモデル: `models/v030_voxel_swin_claip_{0.8k,1.6k,2.5k}/`（v0.3.0）, `models/voxel_swin_claip_{1.6k,3.2k,4.8k}/`（v0.3.1）
+- 評価結果: [data/v03_fine_tuning/evaluations/](data/v03_fine_tuning/evaluations)（v0.3.0）, [data/v031_fine_tuning/evaluations/](data/v031_fine_tuning/evaluations)（v0.3.1）
 - 論文原稿（LaTeX）: [paper_cell_3dswin_cl/0_cell_3dswin_cl_v0-3-0/methodology.tex](paper_cell_3dswin_cl/0_cell_3dswin_cl_v0-3-0/methodology.tex)
 - 実装計画: [docs/Plan_cell_3dswin_cl_v0-3-0.md](docs/Plan_cell_3dswin_cl_v0-3-0.md)

@@ -111,7 +111,10 @@ def fig_anomaly_violin(eval_dir: Path, out_dir: Path, cfg: dict, model_key: str)
 def fig_training_loss(models_dir: Path, out_dir: Path, cfg: dict) -> None:
     rows = []
     for scale in ["0.8k", "1.6k", "2.5k"]:
-        history_path = models_dir / f"voxel_swin_claip_{scale}" / "training_history.json"
+        # NOTE: v0.3.0 checkpoints were renamed to "v030_voxel_swin_claip_*"
+        # after v0.3.1 was introduced (its own "1.6k" scale label would
+        # otherwise collide); config.yaml's run_prefix now reflects this.
+        history_path = models_dir / f"{cfg['v03_contrastive_training']['output']['run_prefix']}_{scale}" / "training_history.json"
         data = load_json(history_path)
         if data:
             for epoch_rec in data["epochs"]:

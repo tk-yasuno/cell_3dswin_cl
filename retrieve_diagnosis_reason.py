@@ -55,13 +55,14 @@ def embed_texts(model, texts: list[str], device: torch.device, batch_size: int =
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", default="config.yaml")
+    parser.add_argument("--version", default="v03", choices=["v03", "v031"])
     parser.add_argument("--model", default="base")
     args = parser.parse_args()
 
     cfg = load_config(args.config)
-    ds_cfg = cfg["v03_dataset"]
-    train_cfg = cfg["v03_contrastive_training"]
-    top_ks = cfg["v03_evaluation"]["diagnosis_retrieval"]["top_ks"]
+    ds_cfg = cfg[f"{args.version}_dataset"]
+    train_cfg = cfg[f"{args.version}_contrastive_training"]
+    top_ks = cfg[f"{args.version}_evaluation"]["diagnosis_retrieval"]["top_ks"]
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = load_model(args.model, train_cfg, device)
@@ -104,7 +105,7 @@ def main() -> None:
         result = {"model": args.model, "n_queries": len(query_df), "n_corpus": len(corpus_df), **hit_rates}
         print(f"[retrieve_diagnosis_reason] model={args.model} n_queries={len(query_df)} {hit_rates}")
 
-    out_dir = Path(cfg["v03_evaluation"]["output_dir"])
+    out_dir = Path(cfg[f"{args.version}_evaluation"]["output_dir"])
     out_dir.mkdir(parents=True, exist_ok=True)
     out_path = out_dir / f"diagnosis_retrieval_{args.model}.json"
     with open(out_path, "w", encoding="utf-8") as f:

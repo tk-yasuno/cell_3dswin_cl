@@ -135,7 +135,13 @@ v03_contrastive_training:
 
   output:
     base_dir: "models"
-    run_prefix: "voxel_swin_claip"   # -> models/voxel_swin_claip_{0.8k,1.6k,2.5k}/
+    # NOTE: renamed from "voxel_swin_claip" to "v030_voxel_swin_claip" after
+    # v0.3.1 was introduced, since v0.3.0's "1.6k" scale label collides with
+    # v0.3.1's "1.6k" (25% of its larger 6,400-cell pool) -- the existing
+    # v0.3.0 checkpoints on disk were renamed accordingly to avoid an
+    # accidental overwrite; this run_prefix keeps config.yaml consistent
+    # with that rename for any future v0.3.0 reruns.
+    run_prefix: "v030_voxel_swin_claip"   # -> models/v030_voxel_swin_claip_{0.8k,1.6k,2.5k}/
 
 # ============================================================================
 # v0.3: Evaluation (zero-shot classification, retrieval, anomaly scoring,
@@ -175,6 +181,168 @@ v03_evaluation:
 v03_paper:
   latex_dir: "paper_cell_3dswin_cl/0_cell_3dswin_cl_v0-3-0"
   figures_dir: "paper_cell_3dswin_cl/0_cell_3dswin_cl_v0-3-0/figures"
+  sections:
+    - "methodology"
+    - "results"
+    - "discussion"
+  figures:
+    dpi: 300
+    format: "png"
+    style: "seaborn-v0_8-paper"
+
+# ============================================================================
+# v0.3.1: Dataset Preparation -- 8 structures x 1,000 cells = 8,000 cells
+# (diversity + scale increase over v0.3.0's 4 structures x 750 = 3,000;
+# per_class_target raised from 625 to 1,000 per user request, to secure
+# more mitotic/abnormal-like samples for anomaly scoring)
+# ============================================================================
+v031_dataset:
+  quilt3_package: "aics/hipsc_single_cell_image_dataset"
+  registry: "s3://allencell"
+  license_note: "Allen Institute Terms of Use: non-commercial research/education only, attribution required (https://www.allencell.org/terms-of-use.html)"
+
+  # v0.3.0's 4 structures (nuclear envelope, mitochondria, microtubules,
+  # tight junctions) plus 4 new structures chosen for organelle/structure
+  # diversity: FBL (nucleolus), SEC61B (endoplasmic reticulum), ST6GAL1
+  # (Golgi apparatus), ACTB (actin filaments -- a second, distinct
+  # cytoskeletal category alongside TUBA1B's microtubules). All verified
+  # empirically against metadata.csv to have >=4,010 total cells and
+  # >=186 mitotic cells. At the 1,000/structure target, ACTB's available
+  # mitotic pool (186) is below the 20%-of-1000=200 oversampling quota, so
+  # ACTB's abnormal-like fraction will fall slightly short (~18.6% instead
+  # of 20%) -- handled gracefully by collect_structure()'s min() cap, not
+  # a bug. See docs/Plan_cell_3dswin_cl_v0-3-0.md.
+  structures: ["LMNB1", "TOMM20", "TUBA1B", "TJP1", "FBL", "SEC61B", "ST6GAL1", "ACTB"]
+  structure_display_names:
+    LMNB1: "nuclear envelope (lamin B1)"
+    TOMM20: "mitochondria (TOM20)"
+    TUBA1B: "microtubules (alpha-tubulin)"
+    TJP1: "tight junctions (ZO-1)"
+    FBL: "nucleolus (fibrillarin)"
+    SEC61B: "endoplasmic reticulum (SEC61 beta)"
+    ST6GAL1: "Golgi apparatus (ST6GAL1)"
+    ACTB: "actin filaments (beta-actin)"
+
+  per_class_target: 1000   # per structure_name; 8 x 1,000 = 8,000 cells total
+  test_per_class: 200      # 8 x 200 = 1,600 fixed holdout; pool = 8 x 800 = 6,400
+
+  mitotic_oversample_fraction: 0.2
+
+  voxel_shape: [64, 64, 64]
+  channels: ["dna", "structure"]
+  intensity_clip_percentile: [0.5, 99.5]
+  random_seed: 42
+  stratify_by: "structure_name"
+
+  output_dir: "data/v031_fine_tuning"
+  voxel_cache_dir: "data/v031_fine_tuning/voxels"
+
+  # Progressive training scales over the 6,400-cell pool -- 4 stages
+  # (quarter/half/three-quarter/full density) were planned, but per user
+  # instruction the experiment stops at 4.8k (compute/time constraints);
+  # 6.4k is intentionally not trained/evaluated. train_6.4k.csv may still
+  # exist on disk from prepare_progressive_splits.py but is unused.
+  train_sizes: [1600, 3200, 4800]
+  scale_labels: {1600: "1.6k", 3200: "3.2k", 4800: "4.8k"}
+
+  proxy_labels_file: "cell_anomaly_proxy_labels_voxel.yaml"
+  finding_templates:
+    interphase:
+      - "a 3D confocal fluorescence volume of an interphase human iPS cell showing an intact {structure}"
+      - "a 3D microscopy volume showing normal, non-dividing {structure} morphology"
+      - "a 3D fluorescence image of a healthy interphase cell with typical {structure} organization"
+      - "volumetric confocal microscopy of {structure} in a non-mitotic, interphase hiPS cell"
+    mitotic:
+      - "a 3D confocal fluorescence volume of a mitotic human iPS cell showing {structure} reorganization during cell division (stage {stage})"
+      - "a 3D microscopy volume showing {structure} undergoing mitotic remodeling (stage {stage})"
+      - "a 3D fluorescence image of a dividing cell with {structure} reorganized for mitosis (stage {stage})"
+      - "volumetric confocal microscopy of {structure} in a mitotic hiPS cell, stage {stage}"
+
+# ============================================================================
+# v0.3.1: Contrastive Learning Domain Adaptation (same architecture as v0.3.0:
+# 3D Swin full fine-tune + ClinicalBERT LoRA)
+# ============================================================================
+v031_contrastive_training:
+  model:
+    voxel_img_size: [64, 64, 64]
+    in_channels: 2
+    feature_size: 24
+    use_checkpoint: true
+    bert_model_id: "emilyalsentzer/Bio_ClinicalBERT"
+    shared_dim: 512
+
+  lora:
+    voxel:
+      r: 8
+      alpha: 16
+      dropout: 0.05
+      target_regex: '.*\.attn\.(qkv|proj)$'
+    text:
+      r: 16
+      alpha: 32
+      dropout: 0.05
+      target_modules: ["query", "key", "value"]
+
+  quantization:
+    enabled: false
+
+  training:
+    batch_size: 12
+    learning_rate: 1.0e-4
+    num_epochs: 15
+    warmup_steps: 20
+    max_grad_norm: 1.0
+    weight_decay: 0.01
+    optim: "adamw_torch"
+    lr_scheduler_type: "cosine"
+    bf16: true
+    logging_steps: 10
+    eval_steps: 50
+    save_total_limit: 1
+    loss: "clip_infonce"
+
+  data:
+    train_val_split: 0.85
+
+  output:
+    base_dir: "models"
+    run_prefix: "voxel_swin_claip"   # -> models/voxel_swin_claip_{1k,2k,4k}/ (distinct from v0.3.0's 0.8k/1.6k/2.5k)
+
+# ============================================================================
+# v0.3.1: Evaluation (8-way zero-shot classification, retrieval, anomaly
+# scoring, diagnosis-reason retrieval)
+# ============================================================================
+v031_evaluation:
+  output_dir: "data/v031_fine_tuning/evaluations"
+
+  zero_shot:
+    prompt_template: "a 3D confocal fluorescence volume showing {c}"
+    batch_size: 8
+    base_accuracy_sanity_range: null
+    chance_accuracy: 0.125   # 1 / 8 structures
+
+  retrieval:
+    batch_size: 16
+    recall_at_k: [1, 5, 10]
+
+  scoring:
+    rules_file: "scoring_rules_voxel.yaml"
+    output_prefix: "cell_anomaly_voxel"
+    proxy_validation:
+      positive_label_key: "abnormal_like_stages"
+      positive_column_name: "proxy_is_abnormal_like"
+      prototype_threshold: 0.70
+
+  diagnosis_retrieval:
+    top_ks: [1, 5]
+
+# ============================================================================
+# v0.3.1: Paper output (same methodology.tex, distinct figures subfolder so
+# v0.3.0's figures are preserved for before/after comparison)
+# ============================================================================
+v031_paper:
+  latex_dir: "paper_cell_3dswin_cl/0_cell_3dswin_cl_v0-3-0"
+  figures_dir: "paper_cell_3dswin_cl/0_cell_3dswin_cl_v0-3-0/figures_v031"
   sections:
     - "methodology"
     - "results"

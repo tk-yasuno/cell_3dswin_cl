@@ -35,9 +35,9 @@
   "rank_pattern": {},
   "revision": null,
   "target_modules": [
-    "key",
+    "query",
     "value",
-    "query"
+    "key"
   ],
   "target_parameters": null,
   "task_type": null,

@@ -53,13 +53,14 @@ def voxel_embed(model, voxel_path: str, device: torch.device) -> torch.Tensor:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", default="config.yaml")
+    parser.add_argument("--version", default="v03", choices=["v03", "v031"])
     parser.add_argument("--model", default="base")
     args = parser.parse_args()
 
     cfg = load_config(args.config)
-    ds_cfg = cfg["v03_dataset"]
-    train_cfg = cfg["v03_contrastive_training"]
-    scoring_section = cfg["v03_evaluation"]["scoring"]
+    ds_cfg = cfg[f"{args.version}_dataset"]
+    train_cfg = cfg[f"{args.version}_contrastive_training"]
+    scoring_section = cfg[f"{args.version}_evaluation"]["scoring"]
     output_prefix = scoring_section.get("output_prefix", "cell_anomaly_voxel")
     proxy_cfg = scoring_section["proxy_validation"]
 
@@ -111,7 +112,7 @@ def main() -> None:
         })
 
     results_df = pd.DataFrame(results)
-    out_dir = Path(cfg["v03_evaluation"]["output_dir"])
+    out_dir = Path(cfg[f"{args.version}_evaluation"]["output_dir"])
     out_dir.mkdir(parents=True, exist_ok=True)
     results_path = out_dir / f"{output_prefix}_scores_{args.model}.csv"
     results_df.to_csv(results_path, index=False)
